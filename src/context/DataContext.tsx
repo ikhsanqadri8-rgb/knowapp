@@ -1,4 +1,13 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { 
+  collection, 
+  doc, 
+  setDoc, 
+  updateDoc, 
+  deleteDoc, 
+  onSnapshot 
+} from 'firebase/firestore';
+import { db } from '../lib/firebase';
 import type { 
   SchoolClass, 
   ClassMember, 
@@ -86,7 +95,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [recommendations, setRecommendations] = useState<StoredAIRecommendation[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
-  // Load clean persistent storage
+  // Initial load from local storage
   useEffect(() => {
     try {
       const savedClasses = localStorage.getItem(STORAGE_KEYS.CLASSES);
@@ -112,6 +121,82 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setIsLoading(false);
     }
   }, []);
+
+  // Connect to Firestore real-time synchronization whenever authenticated
+  useEffect(() => {
+    if (!user) return;
+
+    const unsubs: (() => void)[] = [];
+
+    try {
+      // Sync classes
+      const unsubClasses = onSnapshot(collection(db, 'classes'), (snap) => {
+        const items = snap.docs.map((d) => d.data() as SchoolClass);
+        if (items.length > 0) {
+          setClasses(items);
+          localStorage.setItem(STORAGE_KEYS.CLASSES, JSON.stringify(items));
+        }
+      }, (err) => console.warn('Firestore classes sync note:', err.message));
+      unsubs.push(unsubClasses);
+
+      // Sync members
+      const unsubMembers = onSnapshot(collection(db, 'members'), (snap) => {
+        const items = snap.docs.map((d) => d.data() as ClassMember);
+        if (items.length > 0) {
+          setMembers(items);
+          localStorage.setItem(STORAGE_KEYS.MEMBERS, JSON.stringify(items));
+        }
+      }, (err) => console.warn('Firestore members sync note:', err.message));
+      unsubs.push(unsubMembers);
+
+      // Sync sessions
+      const unsubSessions = onSnapshot(collection(db, 'sessions'), (snap) => {
+        const items = snap.docs.map((d) => d.data() as AssessmentSession);
+        if (items.length > 0) {
+          setSessions(items);
+          localStorage.setItem(STORAGE_KEYS.SESSIONS, JSON.stringify(items));
+        }
+      }, (err) => console.warn('Firestore sessions sync note:', err.message));
+      unsubs.push(unsubSessions);
+
+      // Sync responses
+      const unsubResponses = onSnapshot(collection(db, 'responses'), (snap) => {
+        const items = snap.docs.map((d) => d.data() as AssessmentResponse);
+        if (items.length > 0) {
+          setResponses(items);
+          localStorage.setItem(STORAGE_KEYS.RESPONSES, JSON.stringify(items));
+        }
+      }, (err) => console.warn('Firestore responses sync note:', err.message));
+      unsubs.push(unsubResponses);
+
+      // Sync profiles
+      const unsubProfiles = onSnapshot(collection(db, 'profiles'), (snap) => {
+        const items = snap.docs.map((d) => d.data() as StudentLearningProfile);
+        if (items.length > 0) {
+          setProfiles(items);
+          localStorage.setItem(STORAGE_KEYS.PROFILES, JSON.stringify(items));
+        }
+      }, (err) => console.warn('Firestore profiles sync note:', err.message));
+      unsubs.push(unsubProfiles);
+
+      // Sync recommendations
+      const unsubRecs = onSnapshot(collection(db, 'recommendations'), (snap) => {
+        const items = snap.docs.map((d) => d.data() as StoredAIRecommendation);
+        if (items.length > 0) {
+          setRecommendations(items);
+          localStorage.setItem(STORAGE_KEYS.RECOMMENDATIONS, JSON.stringify(items));
+        }
+      }, (err) => console.warn('Firestore recs sync note:', err.message));
+      unsubs.push(unsubRecs);
+
+    } catch (e) {
+      console.warn('Firestore subscriptions init:', e);
+    }
+
+    return () => {
+      unsubs.forEach((u) => u());
+    };
+  }, [user?.id]);
 
   // Sync to persistence
   const syncClasses = (updated: SchoolClass[]) => {
@@ -170,6 +255,14 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const next = [...classes, newClass];
     syncClasses(next);
+
+    // Save to Firestore
+    try {
+      await setDoc(doc(db, 'classes', newClass.id), newClass);
+    } catch (fsErr) {
+      console.warn('Firestore class save notice:', fsErr);
+    }
+
     return newClass;
   };
 
@@ -185,6 +278,12 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const updated = classes.map((c) => (c.id === classId ? { ...c, ...updates, updatedAt: new Date().toISOString() } : c));
     syncClasses(updated);
+
+    try {
+      await updateDoc(doc(db, 'classes', classId), { ...updates, updatedAt: new Date().toISOString() });
+    } catch (fsErr) {
+      console.warn('Firestore class update notice:', fsErr);
+    }
   };
 
   const archiveClass = async (classId: string): Promise<void> => {
@@ -196,6 +295,12 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const updated = classes.map((c) => (c.id === classId ? { ...c, isArchived: true, updatedAt: new Date().toISOString() } : c));
     syncClasses(updated);
+
+    try {
+      await updateDoc(doc(db, 'classes', classId), { isArchived: true, updatedAt: new Date().toISOString() });
+    } catch (fsErr) {
+      console.warn('Firestore archive class notice:', fsErr);
+    }
   };
 
   const restoreClass = async (classId: string): Promise<void> => {
@@ -207,6 +312,12 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const updated = classes.map((c) => (c.id === classId ? { ...c, isArchived: false, updatedAt: new Date().toISOString() } : c));
     syncClasses(updated);
+
+    try {
+      await updateDoc(doc(db, 'classes', classId), { isArchived: false, updatedAt: new Date().toISOString() });
+    } catch (fsErr) {
+      console.warn('Firestore restore class notice:', fsErr);
+    }
   };
 
   const deleteClass = async (classId: string): Promise<void> => {
@@ -216,13 +327,18 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       throw new Error('Anda tidak memiliki hak otorisasi untuk menghapus kelas ini.');
     }
 
-    // Retain clean cascade deletion without leaving orphaned documents
     syncClasses(classes.filter((c) => c.id !== classId));
     syncMembers(members.filter((m) => m.classId !== classId));
     syncSessions(sessions.filter((s) => s.classId !== classId));
     syncResponses(responses.filter((r) => r.classId !== classId));
     syncProfiles(profiles.filter((p) => p.classId !== classId));
     syncRecommendations(recommendations.filter((rec) => rec.classId !== classId));
+
+    try {
+      await deleteDoc(doc(db, 'classes', classId));
+    } catch (fsErr) {
+      console.warn('Firestore delete class notice:', fsErr);
+    }
   };
 
   const regenerateClassJoinCode = async (classId: string): Promise<string> => {
@@ -235,6 +351,12 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const newCode = generateCleanJoinCode();
     const updated = classes.map((c) => (c.id === classId ? { ...c, joinCode: newCode, updatedAt: new Date().toISOString() } : c));
     syncClasses(updated);
+
+    try {
+      await updateDoc(doc(db, 'classes', classId), { joinCode: newCode, updatedAt: new Date().toISOString() });
+    } catch (fsErr) {
+      console.warn('Firestore code regeneration notice:', fsErr);
+    }
     return newCode;
   };
 
@@ -271,6 +393,13 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
 
     syncMembers([...members, newMember]);
+
+    try {
+      await setDoc(doc(db, 'members', newMember.id), newMember);
+    } catch (fsErr) {
+      console.warn('Firestore join class notice:', fsErr);
+    }
+
     return { success: true, message: `Berhasil bergabung ke kelas ${targetClass.name}!`, classItem: targetClass };
   };
 
@@ -286,6 +415,15 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         : m
     );
     syncMembers(updated);
+
+    const targetMember = members.find((m) => m.classId === classId && m.studentId === studentId);
+    if (targetMember) {
+      try {
+        await updateDoc(doc(db, 'members', targetMember.id), { status: 'removed' });
+      } catch (fsErr) {
+        console.warn('Firestore remove member notice:', fsErr);
+      }
+    }
   };
 
   // SESSION ACTIONS
@@ -310,6 +448,13 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
 
     syncSessions([...sessions, newSession]);
+
+    try {
+      await setDoc(doc(db, 'sessions', newSession.id), newSession);
+    } catch (fsErr) {
+      console.warn('Firestore create session notice:', fsErr);
+    }
+
     return newSession;
   };
 
@@ -321,6 +466,12 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const updated = sessions.map((s) => (s.id === sessionId ? { ...s, ...updates, updatedAt: new Date().toISOString() } : s));
     syncSessions(updated);
+
+    try {
+      await updateDoc(doc(db, 'sessions', sessionId), { ...updates, updatedAt: new Date().toISOString() });
+    } catch (fsErr) {
+      console.warn('Firestore update session notice:', fsErr);
+    }
   };
 
   const updateSessionStatus = async (
@@ -341,6 +492,13 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const updated = sessions.map((s) => (s.id === sessionId ? { ...s, status: targetStatus, updatedAt: new Date().toISOString() } : s));
     syncSessions(updated);
+
+    try {
+      await updateDoc(doc(db, 'sessions', sessionId), { status: targetStatus, updatedAt: new Date().toISOString() });
+    } catch (fsErr) {
+      console.warn('Firestore session status notice:', fsErr);
+    }
+
     return { success: true };
   };
 
@@ -350,8 +508,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       throw new Error('Sesi tidak ditemukan atau otorisasi ditolak.');
     }
 
-    // Strict duplication rule: Only copy permitted configurations.
-    // NEVER duplicate student membership, scores, responses, or AI recommendations.
     const newSession: AssessmentSession = {
       id: `ses_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
       classId: target.classId,
@@ -367,6 +523,13 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
 
     syncSessions([...sessions, newSession]);
+
+    try {
+      await setDoc(doc(db, 'sessions', newSession.id), newSession);
+    } catch (fsErr) {
+      console.warn('Firestore duplicate session notice:', fsErr);
+    }
+
     return newSession;
   };
 
@@ -383,6 +546,12 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     syncSessions(sessions.filter((s) => s.id !== sessionId));
     syncResponses(responses.filter((r) => r.sessionId !== sessionId));
     syncRecommendations(recommendations.filter((rec) => rec.sessionId !== sessionId));
+
+    try {
+      await deleteDoc(doc(db, 'sessions', sessionId));
+    } catch (fsErr) {
+      console.warn('Firestore delete session notice:', fsErr);
+    }
   };
 
   // ASSESSMENT SUBMISSION
@@ -408,7 +577,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const mission = ALL_MISSIONS.find((m) => m.id === missionId);
     if (!mission) throw new Error('Misi tidak ditemukan dalam bank konten.');
 
-    // Objective scoring calculated server-side/engine
     const scoreResult = calculateMissionScore(mission, answers, hintsUsed);
 
     const newResponse: AssessmentResponse = {
@@ -432,7 +600,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const nextResponses = [...responses.filter((r) => !(r.sessionId === sessionId && r.studentId === user.id && r.missionId === missionId)), newResponse];
     syncResponses(nextResponses);
 
-    // Rebuild updated student profile
     const updatedProfile = buildStudentDiagnosticProfile(
       user.id,
       user.displayName,
@@ -445,6 +612,14 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       updatedProfile
     ];
     syncProfiles(nextProfiles);
+
+    // Save to Firestore asynchronously
+    try {
+      await setDoc(doc(db, 'responses', newResponse.id), newResponse);
+      await setDoc(doc(db, 'profiles', updatedProfile.id), updatedProfile);
+    } catch (fsErr) {
+      console.warn('Firestore submission save notice:', fsErr);
+    }
 
     return {
       score: scoreResult.score,
@@ -517,6 +692,12 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const nextRecs = [...recommendations.filter((r) => r.sessionId !== sessionId), storedRec];
       syncRecommendations(nextRecs);
 
+      try {
+        await setDoc(doc(db, 'recommendations', storedRec.id), storedRec);
+      } catch (fsErr) {
+        console.warn('Firestore recommendation save notice:', fsErr);
+      }
+
       return { success: true, data: storedRec };
     } catch (err: any) {
       return { success: false, error: err.message || 'Terjadi kesalahan pemanggilan AI.' };
@@ -532,6 +713,16 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       r.id === recId ? { ...r, teacherNotes: notes, status, updatedAt: new Date().toISOString() } : r
     );
     syncRecommendations(updated);
+
+    try {
+      await updateDoc(doc(db, 'recommendations', recId), {
+        teacherNotes: notes,
+        status,
+        updatedAt: new Date().toISOString()
+      });
+    } catch (fsErr) {
+      console.warn('Firestore update rec notes notice:', fsErr);
+    }
   };
 
   // QUERY HELPERS
