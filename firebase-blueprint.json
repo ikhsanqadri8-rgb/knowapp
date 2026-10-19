@@ -1,0 +1,166 @@
+{
+  "entities": {
+    "users": {
+      "title": "User",
+      "description": "User profile for teachers and students",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "email": { "type": "string", "maxLength": 128 },
+        "displayName": { "type": "string", "maxLength": 100 },
+        "role": { "type": "string", "enum": ["teacher", "student"] },
+        "educatorCodeVerified": { "type": "boolean" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "email", "displayName", "role", "createdAt"]
+    },
+    "classes": {
+      "title": "Class",
+      "description": "School class created and owned by a teacher",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "teacherId": { "type": "string", "maxLength": 128 },
+        "teacherName": { "type": "string", "maxLength": 100 },
+        "name": { "type": "string", "maxLength": 100 },
+        "gradeLevel": { "type": "string", "maxLength": 50 },
+        "major": { "type": "string", "maxLength": 80 },
+        "description": { "type": "string", "maxLength": 500 },
+        "joinCode": { "type": "string", "maxLength": 12 },
+        "isArchived": { "type": "boolean" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "teacherId", "name", "gradeLevel", "major", "joinCode", "isArchived", "createdAt"]
+    },
+    "classMembers": {
+      "title": "ClassMember",
+      "description": "Student membership link to a class",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "classId": { "type": "string", "maxLength": 128 },
+        "studentId": { "type": "string", "maxLength": 128 },
+        "studentName": { "type": "string", "maxLength": 100 },
+        "studentEmail": { "type": "string", "maxLength": 128 },
+        "status": { "type": "string", "enum": ["active", "removed"] },
+        "joinedAt": { "type": "string" }
+      },
+      "required": ["id", "classId", "studentId", "studentName", "status", "joinedAt"]
+    },
+    "assessmentSessions": {
+      "title": "AssessmentSession",
+      "description": "Diagnostic assessment session assigned to a class",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "classId": { "type": "string", "maxLength": 128 },
+        "teacherId": { "type": "string", "maxLength": 128 },
+        "name": { "type": "string", "maxLength": 120 },
+        "description": { "type": "string", "maxLength": 500 },
+        "contentPackId": { "type": "string", "maxLength": 50 },
+        "selectedMissionIds": { "type": "array" },
+        "status": { "type": "string", "enum": ["draft", "scheduled", "active", "paused", "closed", "archived"] },
+        "allowHints": { "type": "boolean" },
+        "maxAttempts": { "type": "number" },
+        "scheduledStartTime": { "type": "string" },
+        "deadlineTime": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "classId", "teacherId", "name", "contentPackId", "status", "createdAt"]
+    },
+    "assessmentResponses": {
+      "title": "AssessmentResponse",
+      "description": "Student response record for an assessment mission",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "sessionId": { "type": "string", "maxLength": 128 },
+        "classId": { "type": "string", "maxLength": 128 },
+        "studentId": { "type": "string", "maxLength": 128 },
+        "studentName": { "type": "string", "maxLength": 100 },
+        "missionId": { "type": "string", "maxLength": 64 },
+        "dimension": { "type": "string", "maxLength": 64 },
+        "score": { "type": "number" },
+        "maxScore": { "type": "number" },
+        "hintsUsed": { "type": "number" },
+        "attemptsCount": { "type": "number" },
+        "timeSpentSeconds": { "type": "number" },
+        "answers": { "type": "object" },
+        "completedAt": { "type": "string" }
+      },
+      "required": ["id", "sessionId", "classId", "studentId", "missionId", "score", "completedAt"]
+    },
+    "learningProfiles": {
+      "title": "LearningProfile",
+      "description": "Aggregated diagnostic profile for a student",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "studentId": { "type": "string", "maxLength": 128 },
+        "classId": { "type": "string", "maxLength": 128 },
+        "studentName": { "type": "string", "maxLength": 100 },
+        "priorKnowledgeScore": { "type": "number" },
+        "interestsSummary": { "type": "string", "maxLength": 500 },
+        "preferredActivities": { "type": "string", "maxLength": 500 },
+        "supportNeeds": { "type": "string", "maxLength": 500 },
+        "evaluatedAt": { "type": "string" }
+      },
+      "required": ["id", "studentId", "classId", "evaluatedAt"]
+    },
+    "aiRecommendations": {
+      "title": "AIRecommendation",
+      "description": "Pedagogical insights and recommendations from Gemini AI",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "sessionId": { "type": "string", "maxLength": 128 },
+        "classId": { "type": "string", "maxLength": 128 },
+        "teacherId": { "type": "string", "maxLength": 128 },
+        "executiveSummary": { "type": "string", "maxLength": 2000 },
+        "observedPatterns": { "type": "array" },
+        "misconceptions": { "type": "array" },
+        "suggestedStrategies": { "type": "array" },
+        "tarlGrouping": { "type": "object" },
+        "scaffoldingSteps": { "type": "array" },
+        "teacherNotes": { "type": "string", "maxLength": 1000 },
+        "status": { "type": "string", "enum": ["draft", "reviewed", "applied"] },
+        "generatedAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "sessionId", "classId", "teacherId", "executiveSummary", "status", "generatedAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "users",
+      "description": "Stores user profiles with role isolation"
+    },
+    "/classes/{classId}": {
+      "schema": "classes",
+      "description": "Teacher classes"
+    },
+    "/classMembers/{memberId}": {
+      "schema": "classMembers",
+      "description": "Class enrollment records"
+    },
+    "/assessmentSessions/{sessionId}": {
+      "schema": "assessmentSessions",
+      "description": "Assessment sessions scoped to a class"
+    },
+    "/assessmentResponses/{responseId}": {
+      "schema": "assessmentResponses",
+      "description": "Student assessment responses"
+    },
+    "/learningProfiles/{profileId}": {
+      "schema": "learningProfiles",
+      "description": "Synthesized student diagnostic profiles"
+    },
+    "/aiRecommendations/{recId}": {
+      "schema": "aiRecommendations",
+      "description": "AI-generated diagnostic recommendations and teacher notes"
+    }
+  }
+}

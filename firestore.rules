@@ -1,0 +1,196 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Default deny catch-all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    // USERS COLLECTION
+    match /users/{userId} {
+      allow get: if isSignedIn() && (request.auth.uid == userId || exists(/databases/$(database)/documents/users/$(request.auth.uid)));
+      allow list: if false; // Blanket user listing forbidden
+
+      allow create: if isSignedIn() 
+        && request.auth.uid == userId
+        && incoming().id == userId
+        && incoming().role in ['teacher', 'student']
+        && incoming().displayName is string && incoming().displayName.size() <= 100
+        && incoming().email is string && incoming().email.size() <= 128;
+
+      allow update: if isSignedIn()
+        && request.auth.uid == userId
+        && incoming().id == existing().id
+        && incoming().role == existing().role // Role is immutable
+        && incoming().email == existing().email // Email is immutable
+        && incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'updatedAt', 'educatorCodeVerified']);
+
+      allow delete: if false; // User accounts are preserved
+    }
+
+    // CLASSES COLLECTION
+    match /classes/{classId} {
+      allow get: if isSignedIn();
+      allow list: if isSignedIn() && (
+        resource.data.teacherId == request.auth.uid ||
+        resource.data.isArchived == false
+      );
+
+      allow create: if isSignedIn()
+        && isValidId(classId)
+        && incoming().teacherId == request.auth.uid
+        && incoming().name is string && incoming().name.size() <= 100
+        && incoming().gradeLevel is string && incoming().gradeLevel.size() <= 50
+        && incoming().major is string && incoming().major.size() <= 80
+        && incoming().joinCode is string && incoming().joinCode.size() <= 12
+        && incoming().isArchived is bool;
+
+      allow update: if isSignedIn()
+        && existing().teacherId == request.auth.uid
+        && incoming().teacherId == existing().teacherId
+        && (
+          incoming().diff(existing()).affectedKeys().hasOnly(['name', 'gradeLevel', 'major', 'description', 'updatedAt', 'joinCode']) ||
+          incoming().diff(existing()).affectedKeys().hasOnly(['isArchived', 'updatedAt'])
+        );
+
+      allow delete: if isSignedIn() && existing().teacherId == request.auth.uid;
+    }
+
+    // CLASS MEMBERS COLLECTION
+    match /classMembers/{memberId} {
+      allow get: if isSignedIn() && (
+        resource.data.studentId == request.auth.uid ||
+        get(/databases/$(database)/documents/classes/$(resource.data.classId)).data.teacherId == request.auth.uid
+      );
+
+      allow list: if isSignedIn() && (
+        resource.data.studentId == request.auth.uid ||
+        get(/databases/$(database)/documents/classes/$(resource.data.classId)).data.teacherId == request.auth.uid
+      );
+
+      allow create: if isSignedIn()
+        && isValidId(memberId)
+        && incoming().studentId == request.auth.uid
+        && exists(/databases/$(database)/documents/classes/$(incoming().classId))
+        && incoming().status in ['active', 'removed'];
+
+      allow update: if isSignedIn() && (
+        // Teacher can update membership status (e.g. remove student)
+        get(/databases/$(database)/documents/classes/$(existing().classId)).data.teacherId == request.auth.uid &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt'])
+      );
+
+      allow delete: if isSignedIn() && (
+        get(/databases/$(database)/documents/classes/$(existing().classId)).data.teacherId == request.auth.uid
+      );
+    }
+
+    // ASSESSMENT SESSIONS
+    match /assessmentSessions/{sessionId} {
+      allow get: if isSignedIn();
+      allow list: if isSignedIn() && (
+        resource.data.teacherId == request.auth.uid ||
+        resource.data.status in ['active', 'scheduled']
+      );
+
+      allow create: if isSignedIn()
+        && isValidId(sessionId)
+        && incoming().teacherId == request.auth.uid
+        && exists(/databases/$(database)/documents/classes/$(incoming().classId))
+        && incoming().status in ['draft', 'scheduled', 'active', 'paused', 'closed', 'archived'];
+
+      allow update: if isSignedIn()
+        && existing().teacherId == request.auth.uid
+        && incoming().teacherId == existing().teacherId
+        && incoming().classId == existing().classId;
+
+      allow delete: if isSignedIn() && existing().teacherId == request.auth.uid;
+    }
+
+    // ASSESSMENT RESPONSES
+    match /assessmentResponses/{responseId} {
+      allow get: if isSignedIn() && (
+        resource.data.studentId == request.auth.uid ||
+        get(/databases/$(database)/documents/classes/$(resource.data.classId)).data.teacherId == request.auth.uid
+      );
+
+      allow list: if isSignedIn() && (
+        resource.data.studentId == request.auth.uid ||
+        get(/databases/$(database)/documents/classes/$(resource.data.classId)).data.teacherId == request.auth.uid
+      );
+
+      allow create: if isSignedIn()
+        && isValidId(responseId)
+        && incoming().studentId == request.auth.uid
+        && exists(/databases/$(database)/documents/assessmentSessions/$(incoming().sessionId))
+        && incoming().score >= 0
+        && incoming().missionId is string;
+
+      allow update: if false; // Responses are immutable once submitted
+      allow delete: if isSignedIn() && get(/databases/$(database)/documents/classes/$(existing().classId)).data.teacherId == request.auth.uid;
+    }
+
+    // LEARNING PROFILES
+    match /learningProfiles/{profileId} {
+      allow get: if isSignedIn() && (
+        resource.data.studentId == request.auth.uid ||
+        get(/databases/$(database)/documents/classes/$(resource.data.classId)).data.teacherId == request.auth.uid
+      );
+
+      allow list: if isSignedIn() && (
+        resource.data.studentId == request.auth.uid ||
+        get(/databases/$(database)/documents/classes/$(resource.data.classId)).data.teacherId == request.auth.uid
+      );
+
+      allow create, update: if isSignedIn() && (
+        incoming().studentId == request.auth.uid ||
+        get(/databases/$(database)/documents/classes/$(incoming().classId)).data.teacherId == request.auth.uid
+      );
+
+      allow delete: if isSignedIn() && get(/databases/$(database)/documents/classes/$(existing().classId)).data.teacherId == request.auth.uid;
+    }
+
+    // AI RECOMMENDATIONS
+    match /aiRecommendations/{recId} {
+      allow get: if isSignedIn() && (
+        resource.data.teacherId == request.auth.uid ||
+        get(/databases/$(database)/documents/classes/$(resource.data.classId)).data.teacherId == request.auth.uid
+      );
+
+      allow list: if isSignedIn() && resource.data.teacherId == request.auth.uid;
+
+      allow create: if isSignedIn()
+        && isValidId(recId)
+        && incoming().teacherId == request.auth.uid;
+
+      allow update: if isSignedIn()
+        && existing().teacherId == request.auth.uid
+        && incoming().teacherId == existing().teacherId
+        && incoming().diff(existing()).affectedKeys().hasOnly(['teacherNotes', 'status', 'updatedAt']);
+
+      allow delete: if isSignedIn() && existing().teacherId == request.auth.uid;
+    }
+  }
+}

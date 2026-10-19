@@ -1,0 +1,6 @@
+{
+  "name": "KNOW",
+  "description": "Interactive Diagnostic Assessment & Learning Insights Platform — Discover Learners. Design Better Learning.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
